@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PLMun - Gate Scanner</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <style>
+        body { font-family: 'Poppins', sans-serif; background-color: #0b1120; background-image: radial-gradient(circle at top right, #1e3a8a 0%, transparent 40%), radial-gradient(circle at bottom left, #0f766e 0%, transparent 40%); display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 15px; }
+        .terminal-card { background: #111827; width: 100%; max-width: 500px; padding: 30px; border-radius: 24px; box-shadow: 0 25px 50px rgba(0,0,0,0.5); text-align: center; border: 1px solid #1f2937; position: relative; overflow: hidden; }
+        .terminal-card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+        h2 { color: #ffffff; font-weight: 700; }
+        p { color: #9ca3af; font-size: 14px; }
+        #reader { width: 100%; border-radius: 16px; overflow: hidden; border: 3px solid #374151; margin-bottom: 20px; display: none; box-shadow: 0 0 25px rgba(59, 130, 246, 0.2); }
+        .status-area { padding: 25px 20px; border-radius: 20px; display: none; margin-bottom: 20px; animation: slideUp 0.3s ease-out; }
+        .status-title { font-size: 36px; font-weight: 800; margin-bottom: 5px; }
+        .status-name { font-size: 18px; font-weight: 600; opacity: 0.9; }
+        .bg-in { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 2px solid rgba(16, 185, 129, 0.3); }
+        .bg-out { background: rgba(59, 130, 246, 0.1); color: #3b82f6; border: 2px solid rgba(59, 130, 246, 0.3); }
+        .bg-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 2px solid rgba(239, 68, 68, 0.3); }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .btn-custom { background: #1e3a8a; color: white; border: none; padding: 15px; border-radius: 12px; font-weight: 600; width: 100%; transition: 0.3s; font-size: 16px; box-shadow: 0 5px 15px rgba(30, 58, 138, 0.3); }
+        .btn-custom:hover { background: #1e40af; transform: translateY(-2px); box-shadow: 0 8px 25px rgba(30, 58, 138, 0.5); }
+        .btn-outline-custom { border: 2px solid #374151; color: #9ca3af; padding: 12px; border-radius: 12px; font-weight: 600; width: 100%; transition: 0.3s; background: transparent; }
+        .btn-outline-custom:hover { border-color: #3b82f6; color: #3b82f6; }
+    </style>
+</head>
+<body>
+
+<div class="terminal-card">
+    <div class="mb-4">
+        <h2 style="color: #ffffff; font-weight: 700;">Gate Terminal</h2>
+        <p style="color: #9ca3af; font-size: 14px;">Position the QR code within the frame.</p>
+    </div>
+    <div id="reader"></div>
+    <div id="statusBox" class="status-area"></div>
+    <div id="controls">
+        <button id="startBtn" class="btn-custom mb-3" onclick="startCamera()">📷 Start Camera</button>
+        <button id="stopBtn" class="btn-outline-custom mb-3" onclick="stopCamera()" style="display: none;">⏹️ Stop Camera</button>
+    </div>
+    <div class="d-flex justify-content-between align-items-center mt-3">
+        <a href="admin_dashboard.html" class="text-decoration-none small fw-semibold" style="color: #9ca3af;">← Dashboard</a>
+        <a href="#" onclick="logout()" class="text-danger text-decoration-none small fw-semibold">Logout</a>
+    </div>
+</div>
+
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getFirestore, collection, query, where, getDocs, addDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+    // BAGONG API KEY
+    const firebaseConfig = {
+        apiKey: "AIzaSyAvEt5YujwsC5iZGiBUNrCvcsy0IUIztUk",
+        authDomain: "plmun-system-v2.firebaseapp.com",
+        projectId: "plmun-system-v2",
+        storageBucket: "plmun-system-v2.firebasestorage.app",
+        messagingSenderId: "348432254532",
+        appId: "1:348432254532:web:5b1b138997f77a59ccb1e1"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const statusBox = document.getElementById('statusBox');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const readerDiv = document.getElementById('reader');
+    let html5QrCode;
+
+    window.startCamera = function() {
+        readerDiv.style.display = 'block'; startBtn.style.display = 'none'; stopBtn.style.display = 'block'; statusBox.style.display = 'none';
+        html5QrCode = new Html5Qrcode("reader");
+        const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+        html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess, onScanError)
+        .catch(err => { alert("Camera Error: " + err); stopCamera(); });
+    }
+
+    window.stopCamera = function() {
+        if (html5QrCode) { html5QrCode.stop().then(() => { readerDiv.style.display = 'none'; startBtn.style.display = 'block'; stopBtn.style.display = 'none'; }).catch(err => console.error(err)); }
+    }
+
+    function playSound(type) {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator(); const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        if (type === 'success') { osc.frequency.value = 880; } if (type === 'error') { osc.frequency.value = 200; } 
+        osc.start(); gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.5); osc.stop(ctx.currentTime + 0.5);
+    }
+
+    async function onScanSuccess(decodedText, decodedResult) {
+        if (html5QrCode) html5QrCode.pause(true);
+        statusBox.style.display = 'block'; statusBox.className = 'status-area bg-in'; statusBox.innerHTML = '<h4 style="color: #9ca3af;">Processing...</h4>';
+        
+        try {
+            const usersRef = collection(db, "users");
+            const q = query(usersRef, where("qrString", "==", decodedText));
+            const querySnapshot = await getDocs(q);
+
+            if (querySnapshot.empty) { throw new Error("Invalid QR Code."); }
+
+            const userDoc = querySnapshot.docs[0];
+            const userData = userDoc.data();
+            const userId = userDoc.id;
+
+            const today = new Date(); today.setHours(0,0,0,0);
+            const logsRef = collection(db, "logs");
+            const logQuery = query(logsRef, where("userId", "==", userId), where("timestamp", ">=", Timestamp.fromDate(today)));
+            const logSnapshot = await getDocs(logQuery);
+
+            let action = "IN";
+            if (!logSnapshot.empty) {
+                const existingLog = logSnapshot.docs[logSnapshot.size - 1].data();
+                if (existingLog.action === "IN") { action = "OUT"; } 
+                else { throw new Error("Already checked out today. Come back tomorrow."); }
+            }
+
+            await addDoc(collection(db, "logs"), {
+                userId: userId,
+                fullName: userData.fullName,
+                action: action,
+                timestamp: Timestamp.now(),
+                gate: "Main Gate"
+            });
+
+            playSound('success');
+            if (action === 'IN') {
+                statusBox.className = 'status-area bg-in';
+                statusBox.innerHTML = `<div class="status-title">IN</div><div class="status-name">${userData.fullName}</div>`;
+            } else {
+                statusBox.className = 'status-area bg-out';
+                statusBox.innerHTML = `<div class="status-title">OUT</div><div class="status-name">${userData.fullName}</div>`;
+            }
+
+        } catch (error) {
+            playSound('error');
+            statusBox.className = 'status-area bg-error';
+            statusBox.innerHTML = `<div class="status-title" style="font-size: 24px;">DENIED</div><div class="status-name" style="font-size:14px;">${error.message}</div>`;
+        }
+
+        setTimeout(() => { statusBox.style.display = 'none'; if (html5QrCode && html5QrCode.getState() === 2) { html5QrCode.resume(); } }, 3000);
+    }
+
+    function onScanError(errorMessage) { /* Ignore */ }
+    window.logout = function() { localStorage.removeItem('currentUser'); window.location.href = 'login.html'; }
+</script>
+</body>
+</html>
